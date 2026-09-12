@@ -1,3 +1,5 @@
+# Version 2
 import streamlit as st
 
-st.write("ISOM5240")
+st.title("ISOM5240")
+st.write("ISOM5240 - Deep Learning Business Applications with Python")
