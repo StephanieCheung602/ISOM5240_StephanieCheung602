@@ -1,16 +1,15 @@
+python
 """
 ISOM5240 Storytelling Application
 ----------------------------------
 Upload an image → generate a caption → expand into a child-safe story →
 convert to audio → play in the browser.
-
-Optimized for Streamlit Cloud's free tier (1 GB RAM).
 """
 
 import io
 import streamlit as st
 from PIL import Image
-from transformers import pipeline
+from transformers import pipeline, BlipProcessor, BlipForConditionalGeneration
 from gtts import gTTS
 
 # ---------- Page config ----------
