@@ -2,7 +2,7 @@ import io
 import streamlit as st
 from PIL import Image
 from transformers import pipeline
-from gTTS import gTTS
+from gttS import gTTS
 
 # ---------- Page config ----------
 st.set_page_config(page_title="Magic Picture Describer", page_icon="🔍")
