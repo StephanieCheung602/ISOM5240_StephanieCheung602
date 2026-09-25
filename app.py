@@ -39,12 +39,12 @@ def load_story_generator():
 import torch
 import numpy as np
 
-def generate_caption(image: Image.Image) -> str:
+def generate_caption(image):
     """Return a short caption describing the uploaded image."""
     processor, model = load_captioner()
     
-    # Let the processor handle the conversion to PyTorch tensors
-    inputs = processor(image, return_tensors="pt")
+    # Process the image and let the processor convert to PyTorch tensors
+    inputs = processor(images=image, return_tensors="pt")
     
     # Generate the caption
     output_ids = model.generate(**inputs, max_new_tokens=50)
