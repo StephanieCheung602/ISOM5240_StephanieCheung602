@@ -2,7 +2,7 @@ import io
 import streamlit as st
 from PIL import Image
 from transformers import pipeline
-from gtts import gTTS  # ✅ All lowercase 'gtts'
+from gtts import gTTS  # Lowercase package import
 
 # ---------- Page config ----------
 st.set_page_config(page_title="Magic Picture Describer", page_icon="🔍")
