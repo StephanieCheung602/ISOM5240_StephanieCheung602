@@ -141,8 +141,8 @@ def main():
     uploaded_file = st.file_uploader(
         "Choose an image...", type=["jpg", "jpeg", "png"]
     )
-
-        if uploaded_file is not None:
+    
+    if uploaded_file is not None:
         # Downscale the image before captioning to save memory.
         image = Image.open(uploaded_file).convert("RGB")
         image.thumbnail((512, 512))
