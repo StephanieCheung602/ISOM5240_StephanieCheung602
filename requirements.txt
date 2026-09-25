@@ -1,5 +1,9 @@
-streamlit==1.38.0
+streamlit==1.39.0
 transformers==4.44.2
-torch==2.2.2
-Pillow==10.3.0
-gTTS==2.5.1
+torch==2.4.1
+torchvision==0.19.1
+numpy==1.26.4
+Pillow==10.4.0
+gTTS==2.5.3
+sentencepiece==0.2.0
+safetensors==0.4.5
