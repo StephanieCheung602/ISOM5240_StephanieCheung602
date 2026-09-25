@@ -145,4 +145,115 @@ def generate_story(caption: str, min_words: int = 50, max_words: int = 100) -> s
             else:
                 text = output.strip()
 
-            text = clean_story_text(text,
+            text = clean_story_text(text, max_words=max_words)
+
+            if not is_child_safe(text):
+                continue
+
+            if len(text.split()) > len(best.split()):
+                best = text
+
+            if len(text.split()) >= min_words:
+                return text
+
+    except Exception:
+        # If anything goes wrong, use fallback
+        pass
+
+    if best and best.strip():
+        return best
+
+    return build_fallback_story(caption)
+
+def build_fallback_story(caption: str) -> str:
+    """Create a simple, safe story template when the model fails."""
+    base = f"In this picture, we see: {caption}. "
+    story = (
+        base
+        "Imagine a little story about what might be happening here. "
+        "The characters and objects in the image are part of a small, quiet moment, "
+        "full of color and detail, waiting for someone to notice them."
+    )
+    words = story.split()
+    if len(words) > 100:
+        story = " ".join(words[:100]).rsplit(".", 1)[0] + "."
+    return story
+
+def text_to_speech(text: str) -> bytes:
+    """Convert text to MP3 audio bytes using gTTS."""
+    try:
+        from gtts import gTTS
+    except Exception as e:
+        raise RuntimeError(f"gTTS not available: {e}")
+
+    if not text or not text.strip():
+        raise ValueError("Cannot convert empty text to speech.")
+
+    tts = gTTS(text=text, lang="en", slow=False)
+    audio_buffer = io.BytesIO()
+    tts.write_to_fp(audio_buffer)
+    audio_buffer.seek(0)
+    return audio_buffer.read()
+
+# ---------- Streamlit UI ----------
+def main():
+    st.title("📖 Magic Picture Storyteller")
+    st.write("Upload a picture and I'll turn it into a short story, then read it aloud!")
+
+    if not models_ok:
+        st.error("AI models failed to load. The app cannot run properly.")
+        st.code(f"Error: {load_error}")
+        st.stop()
+
+    uploaded_file = st.file_uploader(
+        "Choose an image...", type=["jpg", "jpeg", "png"]
+    )
+
+    if uploaded_file is not None:
+        try:
+            # Downscale to save memory.
+            image = Image.open(uploaded_file).convert("RGB")
+            image.thumbnail((512, 512))
+            st.image(image, caption="Your picture")
+        except Exception as e:
+            st.error("Failed to load the image. Please try another file.")
+            st.code(f"Error: {e}")
+            st.stop()
+
+        with st.spinner("Looking at your picture..."):
+            try:
+                caption = generate_caption(image)
+            except Exception as e:
+                st.error("Failed to analyze the image.")
+                st.code(f"Error: {e}")
+                st.stop()
+
+        st.info(f"**What I see:** {caption}")
+
+        with st.spinner("Creating a short story from this picture..."):
+            try:
+                story = generate_story(caption)
+            except Exception as e:
+                st.error("Failed to generate a story.")
+                st.code(f"Error: {e}")
+                st.stop()
+
+        if not story or not story.strip():
+            st.warning("Sorry, I couldn't create a story this time. Please try another picture!")
+            st.stop()
+
+        st.success("**Your picture-inspired story:**")
+        st.write(story)
+
+        with st.spinner("Recording the story..."):
+            try:
+                audio_bytes = text_to_speech(story)
+            except Exception as e:
+                st.error("Failed to create audio.")
+                st.code(f"Error: {e}")
+                st.stop()
+
+        st.audio(audio_bytes, format="audio/mp3")
+
+if __name__ == "__main__":
+    main()
