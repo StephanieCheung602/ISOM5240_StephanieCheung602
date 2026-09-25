@@ -42,7 +42,11 @@ def load_story_generator():
 def generate_caption(image: Image.Image) -> str:
     """Return a short caption describing the uploaded image."""
     captioner = load_captioner()
-    result = captioner(image)
+    
+    # Pass a text prompt string to guide the captioner
+    result = captioner(image, text="")
+    
+    # The pipeline returns a list of dicts, so access the first item
     return result[0]["generated_text"]
 
 
