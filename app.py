@@ -83,7 +83,7 @@ def main():
 
     if uploaded_file is not None:
         image = Image.open(uploaded_file).convert("RGB")
-        st.image(image, caption="Your picture", use_column_width=True)
+        st.image(image, caption="Your picture", use_container_width=True)
 
         with st.spinner("Looking at your picture..."):
             caption = generate_caption(image)
