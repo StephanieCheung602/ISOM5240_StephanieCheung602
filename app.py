@@ -1,8 +1,8 @@
 """
-ISOM5240 Storytelling Application
-----------------------------------
-Upload an image -> generate a caption -> expand into a child-safe story
--> convert to audio -> play it in the browser.
+ISOM5240 Image Description Application
+--------------------------------------
+Upload an image → generate a description of what is seen
+→ convert to audio → play it in the browser.
 """
 import io
 import streamlit as st
@@ -11,34 +11,33 @@ from transformers import pipeline
 from gtts import gTTS
 
 # ---------- Page config ----------
-st.set_page_config(page_title="Magic Story Teller", page_icon="📖")
+st.set_page_config(page_title="Magic Picture Describer", page_icon="🔍")
 
 # ---------- Model loading ----------
 @st.cache_resource(show_spinner=False)
 def load_captioner():
-    """Load BLIP via the high-level pipeline (more robust on Streamlit Cloud)."""
+    """Load BLIP via the high-level pipeline (robust on Streamlit Cloud)."""
     return pipeline(
         "image-to-text",
         model="Salesforce/blip-image-captioning-base",
     )
 
 @st.cache_resource(show_spinner=False)
-def load_story_generator():
-    """Load a tiny story model trained on children's stories only."""
+def load_text_expander():
+    """Small model used only to expand a short caption into a longer description."""
     return pipeline(
         "text-generation",
-        model="roneneldan/TinyStories-33M",  # ~33 MB, GPT-Neo based
+        model="roneneldan/TinyStories-33M",
     )
 
 # ---------- Core functions ----------
 def generate_caption(image: Image.Image) -> str:
-    """Return a short caption describing the uploaded image."""
+    """Return a short caption of the uploaded image."""
     captioner = load_captioner()
-    # pipeline expects a PIL Image and returns a list of dicts
     result = captioner(image)
     return result[0]["generated_text"].strip()
 
-# Words that must never appear in a children's story.
+# Words that must never appear in the description.
 BANNED_WORDS = {
     "kill", "killed", "killing", "death", "dead", "die", "died",
     "blood", "bloody", "violence", "violent", "war", "weapon",
@@ -54,60 +53,63 @@ def is_child_safe(text: str) -> bool:
     lowered = text.lower()
     return not any(word in lowered for word in BANNED_WORDS)
 
-def generate_story(caption: str, min_words: int = 50, max_words: int = 100) -> str:
+def generate_description(caption: str, min_words: int = 50, max_words: int = 100) -> str:
     """
-    Expand the caption into a 50–100 word child-safe story.
-    Retries up to 3 times if the output is too short or fails the safety check.
+    Expand the short caption into a natural description of what is seen.
+    Aims for roughly 50–100 words. Retries a few times if needed.
     """
-    generator = load_story_generator()
-    best_story = ""
-    for attempt in range(3):
-        # TinyStories expects a simple, direct prompt.
-        prompt = f"Once upon a time, there was {caption}. "
-        output = generator(
+    expander = load_text_expander()
+    best = ""
+
+    for _ in range(3):
+        # Prompt the model to describe, not invent a story.
+        prompt = (
+            f"Describe this picture in simple words: {caption}. "
+            "Just say what you can see. "
+        )
+        output = expander(
             prompt,
-            max_new_tokens=160,
+            max_new_tokens=140,
             do_sample=True,
-            temperature=0.7,
+            temperature=0.6,
             top_p=0.9,
             top_k=40,
-            repetition_penalty=1.2,
+            repetition_penalty=1.15,
             no_repeat_ngram_size=3,
             num_return_sequences=1,
-            pad_token_id=generator.tokenizer.eos_token_id,
+            pad_token_id=expander.tokenizer.eos_token_id,
         )[0]["generated_text"]
 
-        # TinyStories echoes the prompt back — strip it.
-        story = output.replace(prompt, "").strip()
+        # Remove the prompt echo.
+        text = output.replace(prompt, "").strip()
 
-        # Deduplicate repeated sentences.
-        sentences = [s.strip() for s in story.split(".") if s.strip()]
+        # Clean repeated sentences.
+        sentences = [s.strip() for s in text.split(".") if s.strip()]
         cleaned = []
         for s in sentences:
             if s in cleaned:
                 break
             cleaned.append(s)
-        story = ". ".join(cleaned)
-        if story and not story.endswith("."):
-            story += "."
+        text = ". ".join(cleaned)
+        if text and not text.endswith("."):
+            text += "."
 
-        # Trim to max_words.
-        words = story.split()
+        # Limit length.
+        words = text.split()
         if len(words) > max_words:
-            story = " ".join(words[:max_words]).rsplit(".", 1)[0] + "."
+            text = " ".join(words[:max_words]).rsplit(".", 1)[0] + "."
 
-        # Safety gate.
-        if not is_child_safe(story):
+        if not is_child_safe(text):
             continue
 
-        # Keep the longest safe attempt as a fallback.
-        if len(story.split()) > len(best_story.split()):
-            best_story = story
+        if len(text.split()) > len(best.split()):
+            best = text
 
-        if len(story.split()) >= min_words:
-            return story
+        if len(text.split()) >= min_words:
+            return text
 
-    return best_story
+    # Fallback: return the best attempt or the original caption.
+    return best if best else caption
 
 def text_to_speech(text: str) -> bytes:
     """Convert text to MP3 audio bytes using gTTS."""
@@ -121,35 +123,35 @@ def text_to_speech(text: str) -> bytes:
 
 # ---------- Streamlit UI ----------
 def main():
-    st.title("📖 Magic Story Teller")
-    st.write("Upload a picture and I'll tell you a story about it!")
+    st.title("🔍 Magic Picture Describer")
+    st.write("Upload a picture and I'll describe what I see in it!")
 
     uploaded_file = st.file_uploader(
         "Choose an image...", type=["jpg", "jpeg", "png"]
     )
 
     if uploaded_file is not None:
-        # Downscale the image before captioning to save memory.
+        # Downscale to save memory.
         image = Image.open(uploaded_file).convert("RGB")
         image.thumbnail((512, 512))
         st.image(image, caption="Your picture")
 
         with st.spinner("Looking at your picture..."):
             caption = generate_caption(image)
-        st.info(f"**What I see:** {caption}")
+        st.info(f"**Short look:** {caption}")
 
-        with st.spinner("Writing a story..."):
-            story = generate_story(caption)
+        with st.spinner("Writing a longer description..."):
+            description = generate_description(caption)
 
-        if not story or not story.strip():
-            st.warning("Sorry, I couldn't write a story this time. Please try again!")
+        if not description or not description.strip():
+            st.warning("Sorry, I couldn't describe the picture this time. Please try again!")
             st.stop()
 
-        st.success("**Here is your story!**")
-        st.write(story)
+        st.success("**Here is what I see:**")
+        st.write(description)
 
-        with st.spinner("Recording the story..."):
-            audio_bytes = text_to_speech(story)
+        with st.spinner("Recording the description..."):
+            audio_bytes = text_to_speech(description)
         st.audio(audio_bytes, format="audio/mp3")
 
 if __name__ == "__main__":
