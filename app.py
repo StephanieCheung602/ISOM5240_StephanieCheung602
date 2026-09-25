@@ -142,11 +142,11 @@ def main():
         "Choose an image...", type=["jpg", "jpeg", "png"]
     )
 
-    if uploaded_file is not None:
+        if uploaded_file is not None:
         # Downscale the image before captioning to save memory.
         image = Image.open(uploaded_file).convert("RGB")
         image.thumbnail((512, 512))
-       st.image(image, caption="Your picture")
+        st.image(image, caption="Your picture")
 
         with st.spinner("Looking at your picture..."):
             caption = generate_caption(image)
