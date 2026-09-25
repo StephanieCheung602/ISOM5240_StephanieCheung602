@@ -1,5 +1,3 @@
-python
-"""
 ISOM5240 Storytelling Application
 ----------------------------------
 Upload an image → generate a caption → expand into a child-safe story →
@@ -16,13 +14,12 @@ from gtts import gTTS
 st.set_page_config(page_title="Magic Story Teller", page_icon="📖")
 
 # ---------- Model loading ----------
-# Two tiny models:
-#   - BLIP base  (~990 MB on disk, but only ~400 MB in RAM after load)
-#   - TinyStories (~10 MB) — trained ONLY on children's stories
-# Together they stay well under Streamlit Cloud's 1 GB limit.
-
 @st.cache_resource(show_spinner=False)
-from transformers import BlipProcessor, BlipForConditionalGeneration
+def load_captioner():
+    """Load BLIP model and processor directly (bypasses the pipeline)."""
+    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+    model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+    return processor, model
 
 @st.cache_resource(show_spinner=False)
 def load_captioner():
