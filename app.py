@@ -41,23 +41,44 @@ def generate_caption(image: Image.Image) -> str:
 def generate_story(caption: str, min_words: int = 50, max_words: int = 100) -> str:
     """Expand the caption into a 50–100 word children's story."""
     generator = load_story_generator()
+
+    # A cleaner, more directive prompt reduces prompt-echoing
     prompt = (
-        f"Write a short, cheerful story for children aged 3 to 10 "
-        f"based on this picture: {caption}. Story:"
+        f"Once upon a time, there was a picture of {caption}. "
+        f"A cheerful story for young children begins here: "
     )
+
     output = generator(
         prompt,
-        max_new_tokens=140,
+        max_new_tokens=180,
         do_sample=True,
-        temperature=0.8,
-        top_p=0.9,
+        temperature=0.9,
+        top_p=0.95,
+        top_k=50,
+        repetition_penalty=1.3,       # <-- discourages repeating the same phrase
+        no_repeat_ngram_size=3,       # <-- blocks repeating 3-word chunks
+        num_return_sequences=1,
         pad_token_id=50256,
     )[0]["generated_text"]
 
-    # Strip the prompt from the output
+    # Remove the prompt from the output
     story = output.replace(prompt, "").strip()
 
-    # Trim to roughly 100 words while keeping whole sentences
+    # Remove any leaked "Story:" prefixes
+    story = story.replace("Story:", "").strip()
+
+    # --- Safety net: cut off at the first repeated sentence ---
+    sentences = [s.strip() for s in story.split(".") if s.strip()]
+    cleaned = []
+    for s in sentences:
+        if s in cleaned:      # stop as soon as a sentence repeats
+            break
+        cleaned.append(s)
+    story = ". ".join(cleaned)
+    if not story.endswith("."):
+        story += "."
+
+    # --- Trim to roughly `max_words` while keeping whole sentences ---
     words = story.split()
     if len(words) > max_words:
         story = " ".join(words[:max_words]).rsplit(".", 1)[0] + "."
