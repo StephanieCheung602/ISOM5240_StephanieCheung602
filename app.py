@@ -11,6 +11,8 @@ import streamlit as st
 from PIL import Image
 from transformers import pipeline, BlipProcessor, BlipForConditionalGeneration
 from gtts import gTTS
+import torch
+import numpy as np
 
 # ---------- Page config ----------
 st.set_page_config(page_title="Magic Story Teller", page_icon="📖")
