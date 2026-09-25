@@ -1,51 +1,44 @@
+"""
+ISOM5240 Image Description Application
+--------------------------------------
+Upload an image → generate a description of what is seen
+→ convert to audio → play it in the browser.
+"""
 import io
+import re
 import streamlit as st
 from PIL import Image
 from transformers import pipeline
-from gtts import gTTS  # Lowercase package import
+from gtts import gTTS
 
 # ---------- Page config ----------
 st.set_page_config(page_title="Magic Picture Describer", page_icon="🔍")
 
-# ---------- Model loading with error handling ----------
+# ---------- Model loading ----------
 @st.cache_resource(show_spinner=False)
 def load_captioner():
-    """Load BLIP via the high-level pipeline."""
-    try:
-        return pipeline(
-            "image-to-text",
-            model="Salesforce/blip-image-captioning-base",
-        )
-    except Exception as e:
-        st.error(f"Failed to load image captioning model: {e}")
-        return None
+    """Load BLIP via the high-level pipeline (robust on Streamlit Cloud)."""
+    return pipeline(
+        "image-to-text",
+        model="Salesforce/blip-image-captioning-base",
+    )
 
 @st.cache_resource(show_spinner=False)
 def load_text_expander():
-    """Small model used strictly to expand caption into visual details (no stories)."""
-    try:
-        return pipeline(
-            "text-generation",
-            model="roneneldan/TinyStories-33M",
-        )
-    except Exception as e:
-        st.error(f"Failed to load text expansion model: {e}")
-        return None
+    """Small model used only to expand a short caption into a longer description."""
+    return pipeline(
+        "text-generation",
+        model="roneneldan/TinyStories-33M",
+    )
 
 # ---------- Core functions ----------
 def generate_caption(image: Image.Image) -> str:
-    """Return a short factual caption of the uploaded image."""
+    """Return a short caption of the uploaded image."""
     captioner = load_captioner()
-    if captioner is None:
-        return "An uploaded image."
-    try:
-        result = captioner(image)
-        return result[0]["generated_text"].strip()
-    except Exception as e:
-        st.warning(f"Could not generate caption: {e}")
-        return "An uploaded image."
+    result = captioner(image)
+    return result[0]["generated_text"].strip()
 
-# Words that must never appear in the description
+# Words that must never appear in the description.
 BANNED_WORDS = {
     "kill", "killed", "killing", "death", "dead", "die", "died",
     "blood", "bloody", "violence", "violent", "war", "weapon",
@@ -61,72 +54,143 @@ def is_child_safe(text: str) -> bool:
     lowered = text.lower()
     return not any(word in lowered for word in BANNED_WORDS)
 
-def generate_description(caption: str, min_words: int = 30, max_words: int = 80) -> str:
+# Words that often indicate storytelling / non-visual content.
+STORY_INDICATORS = {
+    "once upon", "there was", "there were", "he felt", "she felt", "they felt",
+    "it felt", "he thought", "she thought", "they thought", "it seemed",
+    "suddenly", "mysteriously", "magically", "unfortunately", "fortunately",
+    "little did", "in a world", "dreamed", "wished", "hoped", "feared",
+    "brave", "hero", "villain", "adventure", "journey", "quest",
+    "long ago", "far away", "kingdom", "castle", "dragon", "wizard",
+}
+
+# Visual nouns/verbs that suggest the sentence is grounded in the image.
+VISUAL_ANCHORS = {
+    "is", "are", "has", "have", "shows", "showing", "contains", "including",
+    "with", "on", "in", "at", "by", "near", "next to", "behind", "in front of",
+    "wearing", "holding", "standing", "sitting", "walking", "running",
+    "tree", "trees", "building", "buildings", "road", "street", "car", "cars",
+    "person", "people", "man", "men", "woman", "women", "child", "children",
+    "sky", "cloud", "clouds", "grass", "flower", "flowers", "water", "river",
+    "sea", "lake", "mountain", "mountains", "window", "door", "table", "chair",
+    "room", "house", "garden", "park", "sign", "text", "logo", "screen",
+}
+
+def is_story_like(text: str) -> bool:
+    """Return True if text looks like a story rather than a description."""
+    lowered = text.lower()
+    return any(phrase in lowered for phrase in STORY_INDICATORS)
+
+def has_visual_anchor(text: str) -> bool:
+    """Return True if text contains words that suggest it describes visible content."""
+    lowered = text.lower()
+    return any(anchor in lowered for anchor in VISUAL_ANCHORS)
+
+def clean_story_elements(text: str) -> str:
+    """Remove obvious story-like sentences or clauses."""
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+    cleaned = []
+    for s in sentences:
+        if is_story_like(s):
+            continue
+        if not has_visual_anchor(s):
+            # If sentence has no visual anchor and is long, it’s likely speculative.
+            if len(s.split()) > 8:
+                continue
+        cleaned.append(s)
+    if not cleaned:
+        # If everything was removed, fall back to original but trimmed.
+        return text
+    return " ".join(cleaned)
+
+def generate_description(caption: str, min_words: int = 40, max_words: int = 90) -> str:
     """
-    Expand the short caption into a clear, factual visual description.
-    Strictly forbids story generation or imagined scenarios.
+    Expand the short caption into a natural, strictly visual description.
+    Avoids inventing stories, emotions, or unseen events.
     """
     expander = load_text_expander()
-    if expander is None:
-        return f"This image shows {caption}."
-
     best = ""
 
-    # Strict prompt instructing the model to describe only visible facts
-    prompt = (
-        f"Based on the caption '{caption}', describe only the visible elements in the image. "
-        "Do not tell a story or invent imagined events. Focus on colors, objects, and setting: "
-    )
+    for attempt in range(3):
+        # Strongly constrained prompt to avoid storytelling.
+        prompt = (
+            f"Caption: {caption}\n\n"
+            "Task: Write a short, factual description of what is visible in this picture. "
+            "Only describe objects, people, colors, shapes, positions, and actions you can see. "
+            "Do NOT tell a story, do NOT mention feelings, thoughts, time, or events outside the picture. "
+            "Do NOT use phrases like 'once upon', 'there was', 'he felt', 'suddenly', or similar. "
+            "Write in simple English, about 50 to 80 words.\n\n"
+            "Description:"
+        )
 
-    for _ in range(3):
-        try:
-            output = expander(
-                prompt,
-                max_new_tokens=100,
-                do_sample=True,
-                temperature=0.3,  # Lower temperature reduces creative storytelling
-                top_p=0.85,
-                repetition_penalty=1.2,
-                no_repeat_ngram_size=3,
-                num_return_sequences=1,
-                pad_token_id=expander.tokenizer.eos_token_id,
-            )[0]["generated_text"]
+        output = expander(
+            prompt,
+            max_new_tokens=150,
+            do_sample=True,
+            temperature=0.5,
+            top_p=0.9,
+            top_k=40,
+            repetition_penalty=1.2,
+            no_repeat_ngram_size=3,
+            num_return_sequences=1,
+            pad_token_id=expander.tokenizer.eos_token_id,
+        )[0]["generated_text"]
 
-            # Remove prompt echo
-            text = output.replace(prompt, "").strip()
+        # Remove prompt echo (in case model repeats it).
+        if output.startswith(prompt):
+            text = output[len(prompt):].strip()
+        else:
+            text = output.strip()
 
-            # Clean repeated sentences
-            sentences = [s.strip() for s in text.split(".") if s.strip()]
-            cleaned = []
-            for s in sentences:
-                if s in cleaned:
-                    break
-                cleaned.append(s)
-            text = ". ".join(cleaned)
-            if text and not text.endswith("."):
-                text += "."
+        # Clean repeated sentences.
+        sentences = [s.strip() for s in text.split(".") if s.strip()]
+        cleaned = []
+        for s in sentences:
+            if s in cleaned:
+                break
+            cleaned.append(s)
+        text = ". ".join(cleaned)
+        if text and not text.endswith("."):
+            text += "."
 
-            # Truncate over max_words
-            words = text.split()
-            if len(words) > max_words:
-                text = " ".join(words[:max_words]).rsplit(".", 1)[0] + "."
+        # Remove obvious story-like content.
+        text = clean_story_elements(text)
 
-            if not is_child_safe(text):
-                continue
+        # Limit length.
+        words = text.split()
+        if len(words) > max_words:
+            text = " ".join(words[:max_words])
+            # Try to cut at last full sentence.
+            last_dot = text.rfind(".")
+            if last_dot > 10:
+                text = text[: last_dot + 1]
+            else:
+                text = text.rsplit(" ", 1)[0] + "."
 
-            if len(text.split()) > len(best.split()):
-                best = text
+        if not is_child_safe(text):
+            continue
 
-            if len(text.split()) >= min_words:
-                return text
-        except Exception:
-            pass
+        # Prefer longer, visually grounded outputs.
+        if len(text.split()) > len(best.split()) and has_visual_anchor(text):
+            best = text
 
-    if best.strip():
-        return best
+        if len(text.split()) >= min_words and has_visual_anchor(text):
+            return text
 
-    # Factual fallback if model generation fails
-    return f"This image displays {caption} in clear detail."
+    # Fallback: if model keeps drifting, build a simple structured description.
+    if not best or not has_visual_anchor(best):
+        # Very safe fallback: just expand the caption in a template way.
+        fallback = (
+            f"The picture shows: {caption}. "
+            "You can see different objects, colors, and shapes in the image. "
+            "The scene includes visible items and possibly people or text, depending on the photo."
+        )
+        words = fallback.split()
+        if len(words) > max_words:
+            fallback = " ".join(words[:max_words]).rsplit(".", 1)[0] + "."
+        return fallback
+
+    return best
 
 def text_to_speech(text: str) -> bytes:
     """Convert text to MP3 audio bytes using gTTS."""
@@ -141,38 +205,35 @@ def text_to_speech(text: str) -> bytes:
 # ---------- Streamlit UI ----------
 def main():
     st.title("🔍 Magic Picture Describer")
-    st.write("Upload a picture and I'll describe what is visible in it!")
+    st.write("Upload a picture and I'll describe what I see in it!")
 
     uploaded_file = st.file_uploader(
         "Choose an image...", type=["jpg", "jpeg", "png"]
     )
 
     if uploaded_file is not None:
-        try:
-            # Downscale to save memory
-            image = Image.open(uploaded_file).convert("RGB")
-            image.thumbnail((512, 512))
-            st.image(image, caption="Your picture", use_container_width=True)
+        # Downscale to save memory.
+        image = Image.open(uploaded_file).convert("RGB")
+        image.thumbnail((512, 512))
+        st.image(image, caption="Your picture")
 
-            with st.spinner("Analyzing your picture..."):
-                caption = generate_caption(image)
-            st.info(f"**Quick Overview:** {caption}")
+        with st.spinner("Looking at your picture..."):
+            caption = generate_caption(image)
+        st.info(f"**Short look:** {caption}")
 
-            with st.spinner("Generating visual description..."):
-                description = generate_description(caption)
+        with st.spinner("Writing a longer description..."):
+            description = generate_description(caption)
 
-            st.success("**Visual Description:**")
-            st.write(description)
+        if not description or not description.strip():
+            st.warning("Sorry, I couldn't describe the picture this time. Please try again!")
+            st.stop()
 
-            with st.spinner("Generating audio..."):
-                try:
-                    audio_bytes = text_to_speech(description)
-                    st.audio(audio_bytes, format="audio/mp3")
-                except Exception as e:
-                    st.warning(f"Could not generate audio: {e}")
+        st.success("**Here is what I see:**")
+        st.write(description)
 
-        except Exception as e:
-            st.error(f"An error occurred while processing the image: {e}")
+        with st.spinner("Recording the description..."):
+            audio_bytes = text_to_speech(description)
+        st.audio(audio_bytes, format="audio/mp3")
 
 if __name__ == "__main__":
     main()
