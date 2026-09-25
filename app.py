@@ -146,7 +146,7 @@ def main():
         # Downscale the image before captioning to save memory.
         image = Image.open(uploaded_file).convert("RGB")
         image.thumbnail((512, 512))
-        st.image(image, caption="Your picture", use_container_width=True)
+        st.image(image, caption="Your picture", width="stretch")
 
         with st.spinner("Looking at your picture..."):
             caption = generate_caption(image)
