@@ -37,9 +37,16 @@ def load_story_generator():
 def generate_caption(image: Image.Image) -> str:
     """Return a short caption describing the uploaded image."""
     processor, model = load_captioner()
-    inputs = processor(image, return_tensors="pt")
+    
+    # Force CPU processing to avoid tensor conversion issues
+    inputs = processor(images=image, return_tensors="pt", padding=True).cpu()
+    
+    # Generate the caption
     output_ids = model.generate(**inputs, max_new_tokens=50)
+    
+    # Decode the generated tokens
     caption = processor.decode(output_ids[0], skip_special_tokens=True)
+    
     return caption
 
 
