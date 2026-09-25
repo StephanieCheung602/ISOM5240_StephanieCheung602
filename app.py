@@ -1,7 +1,8 @@
+"""
 ISOM5240 Storytelling Application
 ----------------------------------
-Upload an image → generate a caption → expand into a child-safe story →
-convert to audio → play in the browser.
+Upload an image -> generate a caption -> expand into a child-safe story
+-> convert to audio -> play it in the browser.
 """
 
 import io
