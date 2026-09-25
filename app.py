@@ -4,11 +4,10 @@ ISOM5240 Storytelling Application
 Upload an image -> generate a caption -> expand into a child-safe story
 -> convert to audio -> play it in the browser.
 """
-
 import io
 import streamlit as st
 from PIL import Image
-from transformers import pipeline, BlipProcessor, BlipForConditionalGeneration
+from transformers import pipeline
 from gtts import gTTS
 
 # ---------- Page config ----------
@@ -17,17 +16,11 @@ st.set_page_config(page_title="Magic Story Teller", page_icon="📖")
 # ---------- Model loading ----------
 @st.cache_resource(show_spinner=False)
 def load_captioner():
-    """Load BLIP model and processor directly (bypasses the pipeline)."""
-    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-    model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
-    return processor, model
-
-@st.cache_resource(show_spinner=False)
-def load_captioner():
-    """Load BLIP model and processor directly (bypasses the pipeline)."""
-    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-    model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
-    return processor, model
+    """Load BLIP via the high-level pipeline (more robust on Streamlit Cloud)."""
+    return pipeline(
+        "image-to-text",
+        model="Salesforce/blip-image-captioning-base",
+    )
 
 @st.cache_resource(show_spinner=False)
 def load_story_generator():
@@ -40,12 +33,10 @@ def load_story_generator():
 # ---------- Core functions ----------
 def generate_caption(image: Image.Image) -> str:
     """Return a short caption describing the uploaded image."""
-    processor, model = load_captioner()
-    inputs = processor(images=image, return_tensors="pt")
-    output_ids = model.generate(**inputs, max_new_tokens=50)
-    caption = processor.decode(output_ids[0], skip_special_tokens=True)
-    return caption
-
+    captioner = load_captioner()
+    # pipeline expects a PIL Image and returns a list of dicts
+    result = captioner(image)
+    return result[0]["generated_text"].strip()
 
 # Words that must never appear in a children's story.
 BANNED_WORDS = {
@@ -58,12 +49,10 @@ BANNED_WORDS = {
     "drug", "drugs", "alcohol", "drunk", "smoke", "smoking",
 }
 
-
 def is_child_safe(text: str) -> bool:
     """Return True if the text contains no banned words."""
     lowered = text.lower()
     return not any(word in lowered for word in BANNED_WORDS)
-
 
 def generate_story(caption: str, min_words: int = 50, max_words: int = 100) -> str:
     """
@@ -72,11 +61,9 @@ def generate_story(caption: str, min_words: int = 50, max_words: int = 100) -> s
     """
     generator = load_story_generator()
     best_story = ""
-
     for attempt in range(3):
         # TinyStories expects a simple, direct prompt.
         prompt = f"Once upon a time, there was {caption}. "
-
         output = generator(
             prompt,
             max_new_tokens=160,
@@ -122,7 +109,6 @@ def generate_story(caption: str, min_words: int = 50, max_words: int = 100) -> s
 
     return best_story
 
-
 def text_to_speech(text: str) -> bytes:
     """Convert text to MP3 audio bytes using gTTS."""
     if not text or not text.strip():
@@ -133,7 +119,6 @@ def text_to_speech(text: str) -> bytes:
     audio_buffer.seek(0)
     return audio_buffer.read()
 
-
 # ---------- Streamlit UI ----------
 def main():
     st.title("📖 Magic Story Teller")
@@ -142,7 +127,7 @@ def main():
     uploaded_file = st.file_uploader(
         "Choose an image...", type=["jpg", "jpeg", "png"]
     )
-    
+
     if uploaded_file is not None:
         # Downscale the image before captioning to save memory.
         image = Image.open(uploaded_file).convert("RGB")
@@ -166,7 +151,6 @@ def main():
         with st.spinner("Recording the story..."):
             audio_bytes = text_to_speech(story)
         st.audio(audio_bytes, format="audio/mp3")
-
 
 if __name__ == "__main__":
     main()
