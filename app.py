@@ -25,10 +25,10 @@ def load_captioner():
 
 @st.cache_resource
 def load_story_generator():
-    """Load flan-T5 with the correct text2text-generation task."""
+    """Load an extremely lightweight story-specialized model."""
     return pipeline(
-        "text2text-generation",
-        model="google/flan-t5-base",
+        "text-generation",
+        model="justjuu/story-gpt",  # ~57M parameters, far smaller than gpt2-base (124M)
     )
 
 # ---------- Core functions ----------
