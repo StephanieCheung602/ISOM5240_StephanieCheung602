@@ -108,6 +108,8 @@ st.audio(audio_bytes, format="audio/mp3")
 
 def text_to_speech(text: str) -> bytes:
     """Convert text to MP3 audio bytes using gTTS."""
+    if not text or not text.strip():
+        raise ValueError("Cannot convert empty text to speech.")
     tts = gTTS(text=text, lang="en", slow=False)
     audio_buffer = io.BytesIO()
     tts.write_to_fp(audio_buffer)
