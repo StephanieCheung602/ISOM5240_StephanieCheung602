@@ -90,7 +90,22 @@ def generate_story(caption: str, min_words: int = 50, max_words: int = 100) -> s
             return story
 
     return best_story
-    
+
+with st.spinner("Writing a story..."):
+    story = generate_story(caption)
+
+# Guard against empty output
+if not story or not story.strip():
+    st.warning("Sorry, I couldn't write a story this time. Please try again!")
+    st.stop()
+
+st.success("**Here is your story!**")
+st.write(story)
+
+with st.spinner("Recording the story..."):
+    audio_bytes = text_to_speech(story)
+st.audio(audio_bytes, format="audio/mp3")
+
 def text_to_speech(text: str) -> bytes:
     """Convert text to MP3 audio bytes using gTTS."""
     tts = gTTS(text=text, lang="en", slow=False)
