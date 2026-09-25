@@ -25,10 +25,10 @@ def load_captioner():
 
 @st.cache_resource
 def load_story_generator():
-    """Load a small, instruction-tuned text-generation model."""
+    """Load a small, story-tuned text-generation model."""
     return pipeline(
         "text-generation",
-        model="google/flan-t5-base",   # small, safe, instruction-following
+        model="pranavpsv/gpt2-genre-story-generator",
     )
 
 # ---------- Core functions ----------
