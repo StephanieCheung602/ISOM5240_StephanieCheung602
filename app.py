@@ -41,15 +41,12 @@ def generate_caption(image: Image.Image) -> str:
 def generate_story(caption: str, min_words: int = 50, max_words: int = 100) -> str:
     """Expand the caption into a 50–100 word child-friendly story."""
     generator = load_story_generator()
-
     best_story = ""
 
     for attempt in range(3):
         prompt = (
-            f"Write a short, cheerful story for children aged 3 to 10. "
-            f"The story must be about this picture: {caption}. "
-            f"Only mention friendly characters and happy events. "
-            f"Do not include anything scary, violent, romantic, or adult."
+            f"Once upon a time, there was a picture of {caption}. "
+            f"A short, cheerful story for young children: "
         )
 
         output = generator(
@@ -62,12 +59,13 @@ def generate_story(caption: str, min_words: int = 50, max_words: int = 100) -> s
             repetition_penalty=1.2,
             no_repeat_ngram_size=3,
             num_return_sequences=1,
+            pad_token_id=generator.tokenizer.eos_token_id,
         )[0]["generated_text"]
 
-        story = output.strip()
+        story = output.replace(prompt, "").strip()
         story = story.replace("Story:", "").strip()
 
-        # Deduplicate sentences
+        # Deduplicate repeated sentences
         sentences = [s.strip() for s in story.split(".") if s.strip()]
         cleaned = []
         for s in sentences:
@@ -78,7 +76,7 @@ def generate_story(caption: str, min_words: int = 50, max_words: int = 100) -> s
         if story and not story.endswith("."):
             story += "."
 
-        # Trim
+        # Trim to max_words
         words = story.split()
         if len(words) > max_words:
             story = " ".join(words[:max_words]).rsplit(".", 1)[0] + "."
