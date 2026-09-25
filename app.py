@@ -12,7 +12,7 @@ from transformers import pipeline
 from gtts import gTTS
 
 # ---------- Page config ----------
-st.set_page_config(page_title="Magic Picture Storyteller", page_icon="📖")
+st.set_page_config(page_title="MagicStoryteller", page_icon="📖")
 
 # ---------- Model loading ----------
 @st.cache_resource(show_spinner=False)
