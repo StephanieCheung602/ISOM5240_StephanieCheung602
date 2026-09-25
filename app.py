@@ -23,12 +23,14 @@ st.set_page_config(page_title="Magic Story Teller", page_icon="📖")
 # Together they stay well under Streamlit Cloud's 1 GB limit.
 
 @st.cache_resource(show_spinner=False)
+from transformers import BlipProcessor, BlipForConditionalGeneration
+
+@st.cache_resource(show_spinner=False)
 def load_captioner():
-    """Load the image-captioning pipeline (BLIP base)."""
-    return pipeline(
-        "image-to-text",
-        model="Salesforce/blip-image-captioning-base",
-    )
+    """Load BLIP model and processor directly (bypasses the pipeline)."""
+    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+    model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+    return processor, model
 
 @st.cache_resource(show_spinner=False)
 def load_story_generator():
@@ -41,13 +43,11 @@ def load_story_generator():
 # ---------- Core functions ----------
 def generate_caption(image: Image.Image) -> str:
     """Return a short caption describing the uploaded image."""
-    captioner = load_captioner()
-    
-    # Pass a text prompt string to guide the captioner
-    result = captioner(image, text="")
-    
-    # The pipeline returns a list of dicts, so access the first item
-    return result[0]["generated_text"]
+    processor, model = load_captioner()
+    inputs = processor(image, return_tensors="pt")
+    output_ids = model.generate(**inputs, max_new_tokens=50)
+    caption = processor.decode(output_ids[0], skip_special_tokens=True)
+    return caption
 
 
 # Words that must never appear in a children's story.
