@@ -42,14 +42,14 @@ def generate_caption(image: Image.Image) -> str:
     return result[0]["generated_text"]
 
 def generate_story(caption: str, min_words: int = 50, max_words: int = 100) -> str:
-    """Expand the caption into a 50–100 word children's story."""
     generator = load_story_generator()
 
-    # A cleaner, more directive prompt reduces prompt-echoing
-    prompt = (
-        f"Once upon a time, there was a picture of {caption}. "
-        f"A cheerful story for young children begins here: "
-    )
+    for attempt in range(3):           # retry up to 3 times
+        story = _generate_once(generator, caption, max_words)
+        if len(story.split()) >= min_words:
+            return story
+
+    return story                       # fall back to the longest attempt
 
     output = generator(
         prompt,
