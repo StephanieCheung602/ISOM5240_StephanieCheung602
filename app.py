@@ -63,19 +63,19 @@ def is_child_safe(text: str) -> bool:
 
 def generate_description(caption: str, min_words: int = 30, max_words: int = 80) -> str:
     """
-    Expand the short caption into a purely visual description of what is seen.
-    Strictly instructs the model NOT to make up stories or unobservable facts.
+    Expand the short caption into a clear, factual visual description.
+    Strictly forbids story generation or imagined scenarios.
     """
     expander = load_text_expander()
     if expander is None:
-        return f"This picture shows {caption}."
+        return f"This image shows {caption}."
 
     best = ""
 
-    # Prompt explicitly formatted to prevent fictional story generation
+    # Strict prompt instructing the model to describe only visible facts
     prompt = (
-        f"Based strictly on this caption: '{caption}', list only the visible details in the image. "
-        "Do not tell a story or imagine events. Describe the colors, objects, and setting seen: "
+        f"Based on the caption '{caption}', describe only the visible elements in the image. "
+        "Do not tell a story or invent imagined events. Focus on colors, objects, and setting: "
     )
 
     for _ in range(3):
@@ -84,7 +84,7 @@ def generate_description(caption: str, min_words: int = 30, max_words: int = 80)
                 prompt,
                 max_new_tokens=100,
                 do_sample=True,
-                temperature=0.3,  # Lower temperature to keep output factual and grounded
+                temperature=0.3,  # Lower temperature reduces creative storytelling
                 top_p=0.85,
                 repetition_penalty=1.2,
                 no_repeat_ngram_size=3,
@@ -120,10 +120,13 @@ def generate_description(caption: str, min_words: int = 30, max_words: int = 80)
             if len(text.split()) >= min_words:
                 return text
         except Exception:
-            continue
+            pass
 
-    # Fallback to direct caption description if expansion fails
-    return best if best else f"This image displays {caption} in clear detail."
+    if best.strip():
+        return best
+
+    # Factual fallback if model generation fails
+    return f"This image displays {caption} in clear detail."
 
 def text_to_speech(text: str) -> bytes:
     """Convert text to MP3 audio bytes using gTTS."""
