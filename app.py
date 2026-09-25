@@ -1,135 +1,114 @@
+"""
+ISOM5240 Image Description Application
+--------------------------------------
+Upload an image → generate a description of what is seen
+→ convert to audio → play it in the browser.
+"""
 import io
 import streamlit as st
 from PIL import Image
 from transformers import pipeline
 from gtts import gTTS
 
-# ---------- Page Config ----------
-st.set_page_config(page_title="Magic Image Storyteller", page_icon="📖")
+# ---------- Page config ----------
+st.set_page_config(page_title="Magic Picture Describer", page_icon="🔍")
 
-# ---------- Model Loading ----------
+# ---------- Model loading ----------
 @st.cache_resource(show_spinner=False)
 def load_captioner():
-    """Load BLIP image-captioning model."""
-    try:
-        return pipeline(
-            "image-to-text",
-            model="Salesforce/blip-image-captioning-base",
-        )
-    except Exception as e:
-        st.error(f"Failed to load image captioning model: {e}")
-        return None
+    """Use the stronger BLIP-large model for better image descriptions."""
+    return pipeline(
+        "image-to-text",
+        model="Salesforce/blip-image-captioning-large",
+    )
 
 @st.cache_resource(show_spinner=False)
-def load_story_generator():
-    """Load TinyStories-33M for generating child-friendly narratives."""
-    try:
-        return pipeline(
-            "text-generation",
-            model="roneneldan/TinyStories-33M",
-        )
-    except Exception as e:
-        st.error(f"Failed to load story generation model: {e}")
-        return None
+def load_text_expander():
+    """Small model used only to expand a short caption into a longer description."""
+    return pipeline(
+        "text-generation",
+        model="gpt2",          # more neutral than TinyStories for pure description
+    )
 
-# ---------- Core Helper Functions ----------
+# ---------- Core functions ----------
 def generate_caption(image: Image.Image) -> str:
-    """Extract a descriptive caption from the input image."""
+    """Return a caption of the uploaded image using BLIP-large."""
     captioner = load_captioner()
-    if captioner is None:
-        return "a peaceful day in a beautiful scene"
-    try:
-        result = captioner(image)
-        return result[0]["generated_text"].strip()
-    except Exception as e:
-        st.warning(f"Could not analyze image caption: {e}")
-        return "a peaceful day in a beautiful scene"
+    result = captioner(image, max_new_tokens=50)
+    return result[0]["generated_text"].strip()
 
-# Safety word filter
+# Words that must never appear in the description.
 BANNED_WORDS = {
     "kill", "killed", "killing", "death", "dead", "die", "died",
     "blood", "bloody", "violence", "violent", "war", "weapon",
     "gun", "knife", "stab", "shoot", "shot",
-    "romance", "romantic", "kiss", "sex", "sexy", "naked",
-    "hate", "horror", "scary", "terrified", "nightmare",
+    "romance", "romantic", "kiss", "kissed", "kissing",
+    "sex", "sexy", "sexual", "naked", "nude",
+    "hate", "hated", "horror", "scary", "terrified", "nightmare",
     "drug", "drugs", "alcohol", "drunk", "smoke", "smoking",
 }
 
 def is_child_safe(text: str) -> bool:
-    """Return True if text is safe and contains no banned terms."""
+    """Return True if the text contains no banned words."""
     lowered = text.lower()
     return not any(word in lowered for word in BANNED_WORDS)
 
-def build_fallback_story(caption: str) -> str:
-    """Generate a reliable 50–100 word narrative if model output is truncated."""
-    return (
-        f"Once upon a time, in a bright and wonderful place, there was {caption}. "
-        f"Every morning, the sun shone warmly down upon this wonderful scene. "
-        f"Everyone who passed by stopped to smile and admire the gentle surroundings. "
-        f"It was a day filled with quiet joy, kindness, and small magical moments. "
-        f"As evening approached, peaceful calm settled over everything, leaving happy memories for all."
-    )
+def generate_description(caption: str, min_words: int = 40, max_words: int = 90) -> str:
+    """
+    Expand the short caption into a natural description of what is visible.
+    Tries to reach ~40–90 words. Falls back to the original caption if expansion fails.
+    """
+    expander = load_text_expander()
+    best = caption
 
-def generate_story(caption: str, min_words: int = 50, max_words: int = 100) -> str:
-    """Generate a 50–100 word story based on details extracted from the image."""
-    generator = load_story_generator()
-    if generator is None:
-        return build_fallback_story(caption)
-
-    prompt = f"Once upon a time, there was {caption}. One sunny day, "
-    best_story = ""
-
-    for _ in range(3):
+    for _ in range(2):
+        prompt = (
+            f"Describe this picture clearly and factually: {caption}. "
+            "Only talk about what can actually be seen in the image. "
+        )
         try:
-            output = generator(
+            output = expander(
                 prompt,
-                max_new_tokens=130,
+                max_new_tokens=100,
                 do_sample=True,
                 temperature=0.7,
                 top_p=0.9,
-                repetition_penalty=1.15,
+                repetition_penalty=1.2,
                 no_repeat_ngram_size=3,
-                num_return_sequences=1,
-                pad_token_id=generator.tokenizer.eos_token_id,
+                pad_token_id=expander.tokenizer.eos_token_id,
             )[0]["generated_text"]
-
-            story = output.strip()
-
-            # Format full sentences
-            sentences = [s.strip() for s in story.split(".") if s.strip()]
-            cleaned = []
-            for s in sentences:
-                if s in cleaned:
-                    break
-                cleaned.append(s)
-            story = ". ".join(cleaned)
-            if story and not story.endswith("."):
-                story += "."
-
-            # Trim to max_words constraint
-            words = story.split()
-            if len(words) > max_words:
-                story = " ".join(words[:max_words]).rsplit(".", 1)[0] + "."
-
-            if not is_child_safe(story):
-                continue
-
-            word_count = len(story.split())
-            if word_count > len(best_story.split()):
-                best_story = story
-
-            if min_words <= word_count <= max_words:
-                return story
         except Exception:
             continue
 
-    # Fallback if generation is out of word count range
-    if best_story and len(best_story.split()) >= 35:
-        return best_story
-    return build_fallback_story(caption)
+        # Remove the prompt echo
+        text = output.replace(prompt, "").strip()
+
+        # Clean repeated sentences
+        sentences = [s.strip() for s in text.split(".") if s.strip()]
+        cleaned = []
+        for s in sentences:
+            if s in cleaned:
+                break
+            cleaned.append(s)
+        text = ". ".join(cleaned)
+        if text and not text.endswith("."):
+            text += "."
+
+        # Limit length
+        words = text.split()
+        if len(words) > max_words:
+            text = " ".join(words[:max_words]).rsplit(".", 1)[0] + "."
+
+        if is_child_safe(text) and len(text.split()) > len(best.split()):
+            best = text
+
+        if len(best.split()) >= min_words:
+            break
+
+    return best
 
 def text_to_speech(text: str) -> bytes:
-    """Convert generated story to audio format using gTTS."""
+    """Convert text to MP3 audio bytes using gTTS."""
     if not text or not text.strip():
         raise ValueError("Cannot convert empty text to speech.")
     tts = gTTS(text=text, lang="en", slow=False)
@@ -138,48 +117,38 @@ def text_to_speech(text: str) -> bytes:
     audio_buffer.seek(0)
     return audio_buffer.read()
 
-# ---------- Main App Layout ----------
+# ---------- Streamlit UI ----------
 def main():
-    st.title("📖 Magic Image Storyteller")
-    st.write("Upload an image to extract details, generate a narrative story, and listen to the audio!")
+    st.title("🔍 Magic Picture Describer")
+    st.write("Upload a picture and I'll describe what I see in it!")
 
     uploaded_file = st.file_uploader(
-        "Upload an Image", type=["jpg", "jpeg", "png"]
+        "Choose an image...", type=["jpg", "jpeg", "png"]
     )
 
     if uploaded_file is not None:
-        try:
-            # Process & display input image
-            image = Image.open(uploaded_file).convert("RGB")
-            image.thumbnail((512, 512))
-            st.image(image, caption="Uploaded Image", use_container_width=True)
+        # Downscale to save memory
+        image = Image.open(uploaded_file).convert("RGB")
+        image.thumbnail((512, 512))
+        st.image(image, caption="Your picture")
 
-            # Step 1: Caption extraction
-            with st.spinner("Extracting image details..."):
-                caption = generate_caption(image)
-            st.info(f"**Extracted Detail:** {caption}")
+        with st.spinner("Looking at your picture..."):
+            caption = generate_caption(image)
+        st.info(f"**Short look:** {caption}")
 
-            # Step 2: Story generation (50–100 words)
-            with st.spinner("Generating 50–100 word story..."):
-                story = generate_story(caption)
+        with st.spinner("Writing a longer description..."):
+            description = generate_description(caption)
 
-            st.success("**Generated Story:**")
-            st.write(story)
-            
-            # Display Word Count for Verification
-            word_count = len(story.split())
-            st.caption(f"📏 Story Length: **{word_count} words**")
+        if not description or not description.strip():
+            st.warning("Sorry, I couldn't describe the picture this time. Please try again!")
+            st.stop()
 
-            # Step 3: Text-to-Speech Conversion
-            with st.spinner("Converting story to audio..."):
-                try:
-                    audio_bytes = text_to_speech(story)
-                    st.audio(audio_bytes, format="audio/mp3")
-                except Exception as e:
-                    st.warning(f"Audio conversion failed: {e}")
+        st.success("**Here is what I see:**")
+        st.write(description)
 
-        except Exception as e:
-            st.error(f"An error occurred while processing the app: {e}")
+        with st.spinner("Recording the description..."):
+            audio_bytes = text_to_speech(description)
+        st.audio(audio_bytes, format="audio/mp3")
 
 if __name__ == "__main__":
     main()
