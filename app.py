@@ -14,13 +14,13 @@ from gtts import gTTS
 st.set_page_config(page_title="Magic Picture Describer", page_icon="🔍")
 
 # ---------- Model loading ----------
+# Load the processor and model directly
 @st.cache_resource(show_spinner=False)
 def load_captioner():
-    """Use the stronger BLIP-large model for better image descriptions."""
-    return pipeline(
-        "image-to-text",
-        model="Salesforce/blip-image-captioning-large",
-    )
+    """Load the BLIP processor and model directly from Hugging Face."""
+    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+    model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+    return processor, model
 
 @st.cache_resource(show_spinner=False)
 def load_text_expander():
@@ -32,10 +32,19 @@ def load_text_expander():
 
 # ---------- Core functions ----------
 def generate_caption(image: Image.Image) -> str:
-    """Return a caption of the uploaded image using BLIP-large."""
-    captioner = load_captioner()
-    result = captioner(image, max_new_tokens=50)
-    return result[0]["generated_text"].strip()
+    """Return a short caption describing the uploaded image."""
+    processor, model = load_captioner()
+    
+    # Process the image for unconditional captioning (no text prompt needed)
+    inputs = processor(image, return_tensors="pt")
+    
+    # Generate the caption
+    out = model.generate(**inputs)
+    
+    # Decode the generated tokens into a string
+    caption = processor.decode(out[0], skip_special_tokens=True)
+    
+    return caption
 
 # Words that must never appear in the description.
 BANNED_WORDS = {
